@@ -116,48 +116,57 @@ export default function MoneyScreen() {
   );
 }
 
+type Draft = { amount: string; pocket_id: string; category: string; description: string; date: string };
+
 function EntrySheet({ open, onClose, state, onSaved }: { open: boolean; onClose: () => void; state: AppState; onSaved: () => void }) {
-  const [f, setF] = useState({ type: 'expense' as 'income' | 'expense', amount: '', pocket_id: state.pockets[0]?.id ?? '', category: 'transport', description: '', date: state.today });
+  const fresh = (): Draft => ({ amount: '', pocket_id: state.pockets[0]?.id ?? '', category: 'transport', description: '', date: state.today });
+  // Spent and Earned each keep their own draft, so nothing typed in one shows up in the other.
+  const [type, setType] = useState<'income' | 'expense'>('expense');
+  const [drafts, setDrafts] = useState<Record<'income' | 'expense', Draft>>(() => ({ expense: fresh(), income: fresh() }));
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const f = drafts[type];
+  const set = (patch: Partial<Draft>) => setDrafts((d) => ({ ...d, [type]: { ...d[type], ...patch } }));
+  const reset = () => { setDrafts({ expense: fresh(), income: fresh() }); setType('expense'); setError(''); };
+  const close = () => { reset(); onClose(); };
   const pocket = state.pockets.find((p) => p.id === f.pocket_id);
   async function save(e: React.FormEvent) {
     e.preventDefault(); setError('');
     const amount = Number(f.amount.replace(/,/g, ''));
     if (!(amount > 0)) return setError('Enter an amount.');
     setBusy(true);
-    const r = await post('/api/entries', { ...f, category: f.type === 'income' ? 'income' : f.category, amount });
+    const r = await post('/api/entries', { ...f, type, category: type === 'income' ? 'income' : f.category, amount });
     setBusy(false);
-    if (r.ok) { setF({ ...f, amount: '', description: '' }); onSaved(); } else setError(r.data.error ?? 'Could not save.');
+    if (r.ok) { reset(); onSaved(); } else setError(r.data.error ?? 'Could not save.');
   }
   return (
-    <Sheet open={open} onClose={onClose} title="Add an entry">
+    <Sheet open={open} onClose={close} title="Add an entry">
       <form onSubmit={save} className="grid gap-3">
         <div className="grid grid-cols-2 gap-2">
           {(['expense', 'income'] as const).map((t) => (
-            <button type="button" key={t} onClick={() => setF({ ...f, type: t })} className={`h-11 rounded-xl border font-semibold ${f.type === t ? 'bg-green text-white border-green' : 'bg-white border-line'}`}>{t === 'expense' ? 'Spent' : 'Earned'}</button>
+            <button type="button" key={t} onClick={() => { setType(t); setError(''); }} className={`h-11 rounded-xl border font-semibold ${type === t ? 'bg-green text-white border-green' : 'bg-white border-line'}`}>{t === 'expense' ? 'Spent' : 'Earned'}</button>
           ))}
         </div>
         <label className="grid gap-1 text-sm">Pocket
-          <select className={field} value={f.pocket_id} onChange={(e) => setF({ ...f, pocket_id: e.target.value })}>
+          <select className={field} value={f.pocket_id} onChange={(e) => set({ pocket_id: e.target.value })}>
             {state.pockets.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.currency})</option>)}
           </select>
         </label>
         <label className="grid gap-1 text-sm">Amount {pocket ? `(${pocket.currency === 'USD' ? '$' : 'L$'})` : ''}
-          <input className={field} inputMode="decimal" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} placeholder="0" />
+          <input className={field} inputMode="decimal" value={f.amount} onChange={(e) => set({ amount: e.target.value })} placeholder="0" />
         </label>
-        {f.type === 'expense' && (
+        {type === 'expense' && (
           <label className="grid gap-1 text-sm">Category
-            <select className={field} value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}>
+            <select className={field} value={f.category} onChange={(e) => set({ category: e.target.value })}>
               {state.categories.filter((c) => c.key !== 'income').map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
             </select>
           </label>
         )}
         <label className="grid gap-1 text-sm">What for?
-          <input className={field} maxLength={120} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder={f.type === 'expense' ? 'Keke to Red Light' : 'Sales'} />
+          <input className={field} maxLength={120} value={f.description} onChange={(e) => set({ description: e.target.value })} placeholder={type === 'expense' ? 'Keke to Red Light' : 'Sales'} />
         </label>
         <label className="grid gap-1 text-sm">Date
-          <input type="date" className={field} max={state.today} value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} />
+          <input type="date" className={field} max={state.today} value={f.date} onChange={(e) => set({ date: e.target.value })} />
         </label>
         {error && <p role="alert" className="text-sm text-alert">{error}</p>}
         <button disabled={busy} className="h-12 rounded-xl bg-green text-white font-semibold">{busy ? 'Saving…' : 'Save'}</button>
