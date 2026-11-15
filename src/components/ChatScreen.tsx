@@ -138,7 +138,7 @@ function ConfirmCard({ card, status, state, onDone }: { card: PendingCard; statu
           <div key={k} className="grid gap-2 border-b border-line last:border-0 pb-3">
             <input aria-label="Description" className={field} value={r.description} maxLength={120} onChange={(e) => upd(k, { description: e.target.value })} />
             <div className="flex gap-2">
-              <select aria-label="Type" className={field} value={r.type} onChange={(e) => upd(k, { type: e.target.value as Row['type'] })}><option value="expense">Spent</option><option value="income">Earned</option></select>
+              <select aria-label="Type" className={field} value={r.type} onChange={(e) => { const t = e.target.value as Row['type']; upd(k, { type: t, category: t === 'income' ? 'income' : r.category === 'income' ? 'other' : r.category }); }}><option value="expense">Spent</option><option value="income">Earned</option></select>
               <input aria-label="Amount" inputMode="decimal" className={field} value={r.amount} onChange={(e) => upd(k, { amount: e.target.value })} />
             </div>
             <div className="flex gap-2">
