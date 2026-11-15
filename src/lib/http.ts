@@ -23,6 +23,7 @@ export function serverFail(e: unknown): NextResponse {
   console.error('Goalpocket server error:', msg);
   let message = 'The server hit a problem. Please try again.';
   if (/SESSION_SECRET/.test(msg)) message = 'Server setting missing: SESSION_SECRET must be set (32 or more characters).';
+  else if (/goal_contributions.*check|violates check constraint/i.test(msg)) message = 'The database needs one small update. Run db/003_goal_withdrawals.sql in the Supabase SQL editor.';
   else if (/relation .* does not exist|permission denied|row-level security|role "authenticated"|role "gp_app"/i.test(msg)) message = 'The database is not set up yet. Run the two SQL files in the db folder (see SETUP.md).';
   else if (/ECONNREFUSED|ENOTFOUND|ETIMEDOUT|CONNECT_TIMEOUT|password authentication|Tenant or user not found|DATABASE_URL|connection/i.test(msg)) message = 'Cannot reach the database. Check the DATABASE_URL setting (see SETUP.md).';
   return NextResponse.json({ error: message }, { status: 503 });

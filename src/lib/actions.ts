@@ -3,7 +3,7 @@ import 'server-only';
 // Every rule from Stage 3, section 6 lives here, so the AI path and the manual
 // path share exactly the same checks.
 import type { Tx } from './db';
-import type { Ledger } from './engine';
+import { goalStatus, type Ledger } from './engine';
 import { convertCents, formatMoney, toCents, type Currency } from './money';
 import { addDays, daysBetween, isISODate } from './dates';
 import { insertTransaction, rememberCategory } from './repo';
@@ -86,6 +86,20 @@ export function buildContribution(l: Ledger, i: { pocket_id: string; amount: num
   return { ok: true, value: { kind: 'goal_contribution', goalId: l.goal.id, goalName: l.goal.name, pocketId: p.id, pocketName: p.name, fromCents: a.value, fromCurrency: p.currency, toGoalCents: convertCents(a.value, p.currency, l.goal.currency, l.lrdPerUsd), goalCurrency: l.goal.currency, date: d.value } };
 }
 
+/** Take money back out of the goal into a pocket. Stored as a negative contribution. */
+export function buildWithdrawal(l: Ledger, i: { pocket_id: string; amount: number; date: string }): Check<Pending> {
+  if (!l.goal) return { ok: false, error: 'There is no savings goal yet.' };
+  const p = l.pockets.find((x) => x.id === i.pocket_id); if (!p) return { ok: false, error: 'Unknown pocket.' };
+  const w: string[] = [];
+  const a = checkAmount(i.amount, p.currency, w); if (!a.ok) return a;
+  const d = checkDate(i.date, l.today, w); if (!d.ok) return d;
+  const outOfGoal = convertCents(a.value, p.currency, l.goal.currency, l.lrdPerUsd);
+  if (outOfGoal <= 0) return { ok: false, error: 'That amount is too small.' };
+  const saved = goalStatus(l)?.savedCents ?? 0;
+  if (outOfGoal > saved) return { ok: false, error: `Your goal only has ${formatMoney(saved, l.goal.currency)} saved.` };
+  return { ok: true, value: { kind: 'goal_contribution', goalId: l.goal.id, goalName: l.goal.name, pocketId: p.id, pocketName: p.name, fromCents: -a.value, fromCurrency: p.currency, toGoalCents: -outOfGoal, goalCurrency: l.goal.currency, date: d.value } };
+}
+
 export function buildBudget(i: { weekly_limit: number; currency: Currency; category: string | null }): Check<Pending> {
   const c = toCents(i.weekly_limit); if (!c) return { ok: false, error: 'Limit must be greater than zero.' };
   return { ok: true, value: { kind: 'budget', limitCents: c, currency: i.currency, category: i.category } };
@@ -130,7 +144,7 @@ export async function applyPending(tx: Tx, uid: string, l: Ledger, p: Pending): 
     case 'goal_contribution': {
       await tx`insert into goal_contributions (user_id, goal_id, pocket_id, amount_from_pocket_cents, amount_to_goal_cents, occurred_on)
         values (${uid}, ${p.goalId}, ${p.pocketId}, ${p.fromCents}, ${p.toGoalCents}, ${p.date})`;
-      return 'Added to your goal.';
+      return p.fromCents < 0 ? 'Took money out of your goal.' : 'Added to your goal.';
     }
     case 'edit': {
       const [cur] = await tx`select * from transactions where id = ${p.transactionId} and not deleted`;

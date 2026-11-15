@@ -136,7 +136,7 @@ export function goalStatus(l: Ledger): GoalStatus | null {
   const recentStart = addDays(l.today, -28);
   const recent = contribs.filter((c) => c.occurredOn >= recentStart && c.occurredOn <= l.today)
     .reduce((a, c) => a + c.amountToGoalCents, 0);
-  const yourPaceCents = Math.round(recent / 4);
+  const yourPaceCents = Math.max(0, Math.round(recent / 4));
   let projectedFinish: string | null = null;
   if (remainingCents === 0) projectedFinish = l.today;
   else if (yourPaceCents > 0) projectedFinish = addDays(l.today, Math.ceil((remainingCents / yourPaceCents) * 7));
