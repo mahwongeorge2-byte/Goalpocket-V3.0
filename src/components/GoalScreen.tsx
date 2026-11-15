@@ -28,15 +28,15 @@ export default function GoalScreen() {
     setGBusy(false);
     if (r.ok) { setGf({ name: '', target: '', cur: gf.cur, date: '' }); reload(); } else setGMsg(r.data.error ?? 'Could not save the goal.');
   }
-  async function addMoney(e: React.FormEvent) {
-    e.preventDefault(); setCMsg('');
+  async function moveMoney(action: 'contribute' | 'withdraw') {
+    setCMsg('');
     const n = Number(cf.amount.replace(/,/g, ''));
     const pocketId = cf.pocket || state?.pockets[0]?.id || '';
     if (!(n > 0)) return setCMsg('Enter an amount.');
     setGBusy(true);
-    const r = await post('/api/goals', { action: 'contribute', pocket_id: pocketId, amount: n, date: state?.today });
+    const r = await post('/api/goals', { action, pocket_id: pocketId, amount: n, date: state?.today });
     setGBusy(false);
-    if (r.ok) { setCf({ pocket: cf.pocket, amount: '' }); reload(); } else setCMsg(r.data.error ?? 'Could not add the money.');
+    if (r.ok) { setCf({ pocket: cf.pocket, amount: '' }); reload(); } else setCMsg(r.data.error ?? 'Could not update the goal.');
   }
 
   async function check(e: React.FormEvent) {
@@ -95,14 +95,18 @@ export default function GoalScreen() {
 
         {g && (
           <Card>
-            <h2 className="font-head font-bold">Add money to your goal</h2>
-            <form onSubmit={addMoney} className="grid gap-2 mt-2">
-              <select aria-label="From pocket" className={field} value={cf.pocket || state.pockets[0]?.id || ''} onChange={(e) => setCf({ ...cf, pocket: e.target.value })}>
+            <h2 className="font-head font-bold">Add or take out money</h2>
+            <form onSubmit={(e) => { e.preventDefault(); moveMoney('contribute'); }} className="grid gap-2 mt-2">
+              <select aria-label="Pocket" className={field} value={cf.pocket || state.pockets[0]?.id || ''} onChange={(e) => setCf({ ...cf, pocket: e.target.value })}>
                 {state.pockets.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.currency})</option>)}
               </select>
-              <input aria-label="Amount to add" inputMode="decimal" className={field} placeholder="Amount" value={cf.amount} onChange={(e) => setCf({ ...cf, amount: e.target.value })} />
+              <input aria-label="Amount" inputMode="decimal" className={field} placeholder="Amount" value={cf.amount} onChange={(e) => setCf({ ...cf, amount: e.target.value })} />
               {cMsg && <p role="alert" className="text-sm text-alert">{cMsg}</p>}
-              <button disabled={gBusy} className="h-11 rounded-xl bg-green text-white font-semibold">{gBusy ? 'Saving…' : 'Add to goal'}</button>
+              <div className="flex gap-2">
+                <button disabled={gBusy} className="flex-1 h-11 rounded-xl bg-green text-white font-semibold">{gBusy ? 'Saving…' : 'Add to goal'}</button>
+                <button type="button" disabled={gBusy} onClick={() => moveMoney('withdraw')} className="flex-1 h-11 rounded-xl border border-line bg-white font-semibold">Take out</button>
+              </div>
+              <p className="text-xs text-muted">Adding moves money out of the pocket into your goal. Taking out puts it back in the pocket.</p>
             </form>
           </Card>
         )}
