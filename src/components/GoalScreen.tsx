@@ -4,15 +4,40 @@ import type { Affordability } from '@/lib/engine';
 import { Shell, Card, VerdictCard, useAppState, post, formatMoney, prettyDate, field } from './ui';
 
 export default function GoalScreen() {
-  const { state, error } = useAppState();
+  const { state, error, reload } = useAppState();
   const [item, setItem] = useState('');
   const [price, setPrice] = useState('');
   const [cur, setCur] = useState<'USD' | 'LRD'>('USD');
   const [answer, setAnswer] = useState<Affordability | null>(null);
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
+  const [gf, setGf] = useState({ name: '', target: '', cur: 'USD' as 'USD' | 'LRD', date: '' });
+  const [cf, setCf] = useState({ pocket: '', amount: '' });
+  const [gMsg, setGMsg] = useState('');
+  const [cMsg, setCMsg] = useState('');
+  const [gBusy, setGBusy] = useState(false);
   if (!state) return <Shell title="Goal"><p className="p-4 text-muted">{error || 'Loading…'}</p></Shell>;
   const g = state.goal;
+
+  async function saveGoal(e: React.FormEvent) {
+    e.preventDefault(); setGMsg('');
+    const n = Number(gf.target.replace(/,/g, ''));
+    if (!gf.name.trim() || !(n > 0) || !gf.date) return setGMsg('Enter a name, an amount and a date.');
+    setGBusy(true);
+    const r = await post('/api/goals', { action: 'goal', name: gf.name.trim(), target_amount: n, currency: gf.cur, target_date: gf.date });
+    setGBusy(false);
+    if (r.ok) { setGf({ name: '', target: '', cur: gf.cur, date: '' }); reload(); } else setGMsg(r.data.error ?? 'Could not save the goal.');
+  }
+  async function addMoney(e: React.FormEvent) {
+    e.preventDefault(); setCMsg('');
+    const n = Number(cf.amount.replace(/,/g, ''));
+    const pocketId = cf.pocket || state?.pockets[0]?.id || '';
+    if (!(n > 0)) return setCMsg('Enter an amount.');
+    setGBusy(true);
+    const r = await post('/api/goals', { action: 'contribute', pocket_id: pocketId, amount: n, date: state?.today });
+    setGBusy(false);
+    if (r.ok) { setCf({ pocket: cf.pocket, amount: '' }); reload(); } else setCMsg(r.data.error ?? 'Could not add the money.');
+  }
 
   async function check(e: React.FormEvent) {
     e.preventDefault(); setMsg('');
@@ -50,7 +75,36 @@ export default function GoalScreen() {
             <p className="text-xs text-muted mt-2">Add money to your goal by telling the chat, for example &quot;Put $20 from Orange Money toward my laptop&quot;.</p>
           </Card>
         ) : (
-          <Card><h2 className="font-head font-bold">No goal yet</h2><p className="text-sm text-muted mt-1">Tell the chat, for example &quot;I want to save $500 for a laptop by March&quot;.</p></Card>
+          <Card><h2 className="font-head font-bold">No goal yet</h2><p className="text-sm text-muted mt-1">Set one below, or tell the chat, for example &quot;I want to save $500 for a laptop by March&quot;.</p></Card>
+        )}
+
+        <Card>
+          <h2 className="font-head font-bold">{g ? 'Start a new goal' : 'Set a goal'}</h2>
+          {g && <p className="text-xs text-muted mt-1">This replaces your current goal.</p>}
+          <form onSubmit={saveGoal} className="grid gap-2 mt-2">
+            <input aria-label="Goal name" className={field} placeholder="Laptop" maxLength={40} value={gf.name} onChange={(e) => setGf({ ...gf, name: e.target.value })} />
+            <div className="flex gap-2">
+              <input aria-label="Target amount" inputMode="decimal" className={field} placeholder="Amount" value={gf.target} onChange={(e) => setGf({ ...gf, target: e.target.value })} />
+              <select aria-label="Goal currency" className="h-11 rounded-xl border border-line bg-white px-2" value={gf.cur} onChange={(e) => setGf({ ...gf, cur: e.target.value as 'USD' | 'LRD' })}><option>USD</option><option>LRD</option></select>
+            </div>
+            <label className="grid gap-1 text-sm">By when?<input type="date" className={field} value={gf.date} onChange={(e) => setGf({ ...gf, date: e.target.value })} /></label>
+            {gMsg && <p role="alert" className="text-sm text-alert">{gMsg}</p>}
+            <button disabled={gBusy} className="h-11 rounded-xl bg-green text-white font-semibold">{gBusy ? 'Saving…' : 'Save goal'}</button>
+          </form>
+        </Card>
+
+        {g && (
+          <Card>
+            <h2 className="font-head font-bold">Add money to your goal</h2>
+            <form onSubmit={addMoney} className="grid gap-2 mt-2">
+              <select aria-label="From pocket" className={field} value={cf.pocket || state.pockets[0]?.id || ''} onChange={(e) => setCf({ ...cf, pocket: e.target.value })}>
+                {state.pockets.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.currency})</option>)}
+              </select>
+              <input aria-label="Amount to add" inputMode="decimal" className={field} placeholder="Amount" value={cf.amount} onChange={(e) => setCf({ ...cf, amount: e.target.value })} />
+              {cMsg && <p role="alert" className="text-sm text-alert">{cMsg}</p>}
+              <button disabled={gBusy} className="h-11 rounded-xl bg-green text-white font-semibold">{gBusy ? 'Saving…' : 'Add to goal'}</button>
+            </form>
+          </Card>
         )}
 
         <Card>
