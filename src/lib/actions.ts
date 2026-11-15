@@ -39,7 +39,10 @@ export function validateTxnItem(l: Ledger, raw: { type: 'income' | 'expense'; am
   if (pocket.currency !== raw.currency) return { ok: false, error: `${pocket.name} holds ${pocket.currency}, but the amount is in ${raw.currency}. Ask the user which pocket or currency.` };
   const a = checkAmount(raw.amount, raw.currency, warnings); if (!a.ok) return a;
   const d = checkDate(raw.date, l.today, warnings); if (!d.ok) return d;
-  return { ok: true, value: { type: raw.type, amountCents: a.value, currency: raw.currency, pocketId: pocket.id, pocketName: pocket.name, category: raw.category, description: raw.description.trim() || (raw.type === 'income' ? 'Income' : 'Expense'), date: d.value, warnings } };
+  // Income and expenses stay separate: income always uses the Income category, and an expense can never use it.
+  if (raw.type === 'expense' && raw.category === 'income') return { ok: false, error: 'An expense needs a spending category, not Income. Ask the user which category fits.' };
+  const category = raw.type === 'income' ? 'income' : raw.category;
+  return { ok: true, value: { type: raw.type, amountCents: a.value, currency: raw.currency, pocketId: pocket.id, pocketName: pocket.name, category, description: raw.description.trim() || (raw.type === 'income' ? 'Income' : 'Expense'), date: d.value, warnings } };
 }
 
 // ---------- Pending payloads ----------
