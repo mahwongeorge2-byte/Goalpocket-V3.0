@@ -10,6 +10,7 @@ It does need a database and two required settings. If any is missing, the demo b
 3. Run the whole of `db/001_schema.sql`.
 4. Run the whole of `db/002_supabase.sql`. **Run it after step 2.** If the role did not exist, it skips its permissions silently. If you ran it too early, just run it again.
 5. Run the whole of `db/003_goal_withdrawals.sql` to enable goal withdrawals. It is safe to run more than once.
+6. Run the whole of `db/004_chat_conversations.sql` to add chat conversation storage and preserve existing messages. It is safe to run more than once.
 6. Open **Connect** in Supabase and copy the **Transaction pooler** connection string. Replace the user with `gp_app.<your-project-ref>` and the password with the one from step 2. This is your `DATABASE_URL`.
 
 ## 2. Vercel settings
