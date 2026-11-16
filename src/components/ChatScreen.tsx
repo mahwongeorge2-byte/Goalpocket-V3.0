@@ -23,6 +23,8 @@ export default function ChatScreen() {
   const [conversations, setConversations] = useState<{ id: string; title: string; updatedAt: string }[]>([]);
   const [conversationId, setConversationId] = useState('');
   const [historyBusy, setHistoryBusy] = useState(true);
+  const [editingId, setEditingId] = useState('');
+  const [editingText, setEditingText] = useState('');
   const end = useRef<HTMLDivElement>(null);
 
   async function refreshConversations() {
@@ -35,9 +37,41 @@ export default function ChatScreen() {
     setConversationId(id);
     setMsgs([]);
     const r = await fetch(`/api/chat?conversationId=${encodeURIComponent(id)}`, { cache: 'no-store' });
-    const rows = r.ok ? await r.json() as { role: 'user' | 'assistant'; text: string }[] : [];
-    setMsgs(rows.filter((x) => x.text).map((x) => ({ id: nid(), role: x.role, text: x.text })));
+    const rows = r.ok ? await r.json() as { id: string; role: 'user' | 'assistant'; text: string }[] : [];
+    setMsgs(rows.filter((x) => x.text).map((x) => ({ id: x.id, role: x.role, text: x.text })));
     setHistoryBusy(false);
+  }
+
+  async function refreshMessageIds() {
+    if (!conversationId) return;
+    const r = await fetch(`/api/chat?conversationId=${encodeURIComponent(conversationId)}`, { cache: 'no-store' });
+    if (!r.ok) return;
+    const rows = await r.json() as { id: string; role: 'user' | 'assistant'; text: string }[];
+    setMsgs((current) => [
+      ...rows.filter((x) => x.text).map((x) => ({ id: x.id, role: x.role, text: x.text } as Msg)),
+      ...current.filter((m) => m.role !== 'user' && m.role !== 'assistant'),
+    ]);
+  }
+
+  async function deleteMessage(id: string) {
+    if (!window.confirm('Delete this chat message? Your saved money records will not be affected.')) return;
+    const r = await fetch(`/api/chat/messages/${id}`, { method: 'DELETE' });
+    if (r.ok) await openConversation(conversationId);
+  }
+
+  async function resendEditedMessage(id: string) {
+    const edited = editingText.trim();
+    if (!edited || !window.confirm('Resending replaces this message and the later chat replies. Saved money records will not be affected. Continue?')) return;
+    const r = await fetch(`/api/chat/messages/${id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: edited }),
+    });
+    if (!r.ok) return;
+    setEditingId('');
+    setEditingText('');
+    await openConversation(conversationId);
+    await send(edited);
   }
 
   async function startNewChat() {
@@ -110,7 +144,7 @@ export default function ChatScreen() {
       for (const c of res.cards ?? []) add.push({ id: nid(), role: 'card', card: c, status: 'open' });
       if (res.ask) add.push({ id: nid(), role: 'ask', question: res.ask.question, options: res.ask.options, used: false });
     }
-    setMsgs((x) => [...x, ...add]); setBusy(false); void refreshConversations();
+    setMsgs((x) => [...x, ...add]); setBusy(false); await refreshMessageIds(); void refreshConversations();
   }
 
   const setMsg = (id: string, patch: Partial<Msg>) => setMsgs((x) => x.map((m) => (m.id === id ? ({ ...m, ...patch } as Msg) : m)));
@@ -141,7 +175,27 @@ export default function ChatScreen() {
           </div>
         )}
         {msgs.map((m) => {
-          if (m.role === 'user' || m.role === 'assistant') return m.role === 'user' ? <p key={m.id} className="justify-self-end max-w-[85%] bg-green text-white rounded-2xl rounded-br-md px-3.5 py-2.5 whitespace-pre-wrap">{m.text}</p> : <p key={m.id} className="justify-self-start max-w-[90%] bg-white border border-line rounded-2xl rounded-bl-md px-3.5 py-2.5 whitespace-pre-wrap">{m.text}</p>;
+          if (m.role === 'user' || m.role === 'assistant') return (
+            <div key={m.id} className={m.role === 'user' ? 'justify-self-end max-w-[90%] grid gap-1' : 'justify-self-start max-w-[95%] grid gap-1'}>
+              {editingId === m.id && m.role === 'user' ? (
+                <div className="grid gap-2 bg-white border border-line rounded-2xl p-3">
+                  <input aria-label="Edit message" className={field} value={editingText} maxLength={500} onChange={(e) => setEditingText(e.target.value)} />
+                  <div className="flex gap-2">
+                    <button onClick={() => void resendEditedMessage(m.id)} disabled={busy || historyBusy || !editingText.trim()} className="h-9 px-3 rounded-lg bg-green text-white text-xs font-semibold">Resend</button>
+                    <button onClick={() => { setEditingId(''); setEditingText(''); }} className="h-9 px-3 rounded-lg border border-line text-xs">Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <p className={m.role === 'user' ? 'bg-green text-white rounded-2xl rounded-br-md px-3.5 py-2.5 whitespace-pre-wrap' : 'bg-white border border-line rounded-2xl rounded-bl-md px-3.5 py-2.5 whitespace-pre-wrap'}>{m.text}</p>
+              )}
+              {/^[0-9a-f-]{36}$/i.test(m.id) && (
+                <div className="flex gap-3 text-[11px] text-muted px-1">
+                  {m.role === 'user' && <button onClick={() => { setEditingId(m.id); setEditingText(m.text); }} disabled={busy || historyBusy}>Edit & resend</button>}
+                  <button onClick={() => void deleteMessage(m.id)} disabled={busy || historyBusy}>Delete</button>
+                </div>
+              )}
+            </div>
+          );
           if (m.role === 'verdict') return state ? <VerdictCard key={m.id} a={m.result} home={state.home} /> : null;
           if (m.role === 'ask') return (
             <div key={m.id} className="grid gap-2">
