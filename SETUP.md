@@ -1,6 +1,6 @@
 # Goalpocket setup (do these in order)
 
-The app needs no AI key to run. Without one, the chat runs in demo mode (pattern matching, not AI). For live AI, configure a Gemini API key on the server.
+The app needs no AI key to run. Without one, the chat runs in demo mode (pattern matching, not AI). For live AI, configure an OpenRouter API key on the server.
 It does need a database and two required settings. If any is missing, the demo button and "Get started" fail.
 
 ## 1. Database (Supabase, free)
@@ -17,8 +17,8 @@ It does need a database and two required settings. If any is missing, the demo b
 Project → Settings → Environment Variables. Add:
 - `DATABASE_URL` = the string from step 1.7
 - `SESSION_SECRET` = any random text, 32 or more characters
-- `GEMINI_API_KEY` = your Gemini API key (leave out to use demo chat mode)
-- `GEMINI_MODEL` = optional; defaults to `gemini-3.8-flash`
+- `OPENROUTER_API_KEY` = your OpenRouter API key (leave out to use demo chat mode)
+- `OPENROUTER_MODEL` = optional; defaults to `openrouter/free`
 
 Then **Redeploy** (settings only apply to new deployments).
 
