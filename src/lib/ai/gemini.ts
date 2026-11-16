@@ -135,7 +135,7 @@ export async function geminiCreate(params: CreateParams): Promise<BetaMessage> {
   };
 
   if (!response.ok) {
-    throw new Error(payload.error?.message ?? `Gemini API request failed (${response.status})`);
+    throw new Error(`Gemini API HTTP ${response.status}: ${payload.error?.message ?? 'request rejected'}`);
   }
 
   const choice = payload.choices?.[0];
