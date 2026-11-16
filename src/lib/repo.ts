@@ -137,6 +137,21 @@ export async function chatHistory(tx: Tx, limit = 30, requestedId?: string) {
   return rows.reverse().map((r) => ({ role: r.role as 'user' | 'assistant', content: r.content }));
 }
 
+export async function deleteChatMessage(tx: Tx, messageId: string): Promise<boolean> {
+  const rows = await tx`delete from chat_messages where id = ${messageId} returning id`;
+  return rows.length > 0;
+}
+
+/** Replace a user turn and discard later chat-only messages so it can be resent cleanly. */
+export async function replaceChatMessageForResend(tx: Tx, messageId: string, text: string): Promise<string | null> {
+  const [message] = await tx`select id, conversation_id, created_at, role from chat_messages where id = ${messageId} limit 1`;
+  if (!message || message.role !== 'user') return null;
+  const conversationId = message.conversation_id as string;
+  await tx`delete from chat_messages where conversation_id = ${conversationId} and created_at >= ${message.created_at}`;
+  await tx`update chat_conversations set updated_at = now() where id = ${conversationId}`;
+  return conversationId;
+}
+
 /** Simple per-user limit: at most `max` chat messages per minute. */
 export async function hitRateLimit(tx: Tx, uid: string, max = 12): Promise<boolean> {
   const [row] = await tx`insert into rate_limits (user_id, window_start, count)
