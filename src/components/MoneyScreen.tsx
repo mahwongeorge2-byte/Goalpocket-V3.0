@@ -8,6 +8,8 @@ export default function MoneyScreen() {
   const { state, error, reload } = useAppState();
   const [adding, setAdding] = useState(false);
   const [settings, setSettings] = useState(false);
+  const [removeError, setRemoveError] = useState('');
+  const [removingId, setRemovingId] = useState('');
   if (!state) return <Shell title="Money"><p className="p-4 text-muted">{error || 'Loading…'}</p></Shell>;
   const h = state.home;
   const t = state.totals;
@@ -16,8 +18,12 @@ export default function MoneyScreen() {
   const b = state.budget;
 
   async function remove(id: string, label: string) {
-    if (!window.confirm(`Remove "${label}"? Your balances will update.`)) return;
-    await post(`/api/entries?id=${id}`, undefined, 'DELETE'); reload();
+    if (!window.confirm(`Remove "${label}"? This hides the entry and updates your balances. You cannot undo this from the app.`)) return;
+    setRemoveError(''); setRemovingId(id);
+    const r = await post(`/api/entries?id=${id}`, undefined, 'DELETE');
+    setRemovingId('');
+    if (!r.ok) { setRemoveError(r.data.error ?? 'Could not remove this entry. Please try again.'); return; }
+    await reload();
   }
 
   return (
@@ -95,6 +101,7 @@ export default function MoneyScreen() {
 
         <Card>
           <h2 className="font-head font-bold mb-2">Recent</h2>
+          {removeError && <p role="alert" className="mb-2 text-sm text-alert">{removeError}</p>}
           <ul className="divide-y divide-line">
             {state.recent.length === 0 && <li className="text-sm text-muted py-2">Nothing yet. Tap + or tell the chat.</li>}
             {state.recent.map((r) => (
@@ -102,7 +109,7 @@ export default function MoneyScreen() {
                 <span aria-hidden className="text-lg">{r.icon}</span>
                 <div className="flex-1 min-w-0"><p className="truncate">{r.description || r.categoryLabel}</p><p className="text-xs text-muted">{r.categoryLabel} · {r.pocketName} · {prettyDate(r.occurredOn)}</p></div>
                 <span className={`num font-semibold ${r.type === 'income' ? 'text-green' : ''}`}>{r.type === 'income' ? '+' : '−'}{formatMoney(r.amountCents, r.currency)}</span>
-                <button onClick={() => remove(r.id, r.description || r.categoryLabel)} aria-label={`Remove ${r.description}`} className="w-8 h-8 rounded-full text-muted hover:bg-line">✕</button>
+                <button onClick={() => remove(r.id, r.description || r.categoryLabel)} disabled={removingId === r.id} aria-label={`Remove ${r.description}`} className="w-10 h-10 rounded-full text-muted hover:bg-line disabled:opacity-50">{removingId === r.id ? '…' : '✕'}</button>
               </li>
             ))}
           </ul>
@@ -178,35 +185,56 @@ function EntrySheet({ open, onClose, state, onSaved }: { open: boolean; onClose:
 function SettingsSheet({ open, onClose, state, onSaved }: { open: boolean; onClose: () => void; state: AppState; onSaved: () => void }) {
   const [rate, setRate] = useState(String(state.rate));
   const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
   async function saveRate() {
     const n = Number(rate);
     if (!(n > 0)) return setMsg('Enter a number above zero.');
+    setBusy(true);
     const r = await post('/api/settings', { action: 'rate', lrdPerUsd: n });
-    setMsg(r.ok ? 'Rate saved.' : 'Could not save.'); if (r.ok) onSaved();
+    setBusy(false);
+    setMsg(r.ok ? 'Rate saved.' : (r.data.error ?? 'Could not save the rate. Please try again.'));
+    if (r.ok) onSaved();
   }
-  async function toggle(pocketId: string, spendable: boolean) { await post('/api/settings', { action: 'spendable', pocketId, spendable }); onSaved(); }
-  async function signout() { await post('/api/settings', { action: 'signout' }); window.location.href = '/'; }
+  async function toggle(pocketId: string, spendable: boolean) {
+    setBusy(true);
+    const r = await post('/api/settings', { action: 'spendable', pocketId, spendable });
+    setBusy(false);
+    if (!r.ok) setMsg(r.data.error ?? 'Could not update that pocket. Please try again.');
+    else { setMsg('Pocket setting saved.'); onSaved(); }
+  }
+  async function signout() {
+    setBusy(true);
+    const r = await post('/api/settings', { action: 'signout' });
+    setBusy(false);
+    if (r.ok) window.location.href = '/';
+    else setMsg(r.data.error ?? 'Could not sign out. Please try again.');
+  }
   async function wipe() {
-    if (!window.confirm('Delete all your Goalpocket data? This cannot be undone.')) return;
-    await post('/api/settings', { action: 'delete_my_data' }); window.location.href = '/';
+    if (!window.confirm('Permanently delete your Goalpocket account and all its saved records? This cannot be undone. If you want to keep a copy, do not continue.')) return;
+    setBusy(true);
+    const r = await post('/api/settings', { action: 'delete_my_data' });
+    setBusy(false);
+    if (r.ok) window.location.href = '/';
+    else setMsg(r.data.error ?? 'Could not delete your data. Nothing was confirmed as deleted; please try again.');
   }
   return (
     <Sheet open={open} onClose={onClose} title="Settings">
       <div className="grid gap-5">
         <div className="grid gap-2">
           <label className="text-sm font-medium" htmlFor="rate">Your exchange rate (L$ for $1)</label>
-          <div className="flex gap-2"><input id="rate" className={field} inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} /><button onClick={saveRate} className="h-11 px-4 rounded-xl bg-green text-white font-semibold">Save</button></div>
+          <div className="flex gap-2"><input id="rate" className={field} inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} /><button onClick={saveRate} disabled={busy} className="h-11 px-4 rounded-xl bg-green text-white font-semibold">Save</button></div>
           {msg && <p className="text-xs text-muted" role="status">{msg}</p>}
         </div>
         <div className="grid gap-1">
           <p className="text-sm font-medium">Spendable now</p>
           {state.pockets.map((p) => (
-            <label key={p.id} className="flex items-center justify-between py-1.5 text-sm">{p.name}<input type="checkbox" className="w-5 h-5 accent-green" checked={p.spendable} onChange={(e) => toggle(p.id, e.target.checked)} /></label>
+            <label key={p.id} className="flex items-center justify-between py-1.5 text-sm">{p.name}<input type="checkbox" className="w-5 h-5 accent-green" checked={p.spendable} disabled={busy} onChange={(e) => toggle(p.id, e.target.checked)} /></label>
           ))}
         </div>
+        {busy && <p className="text-xs text-muted" role="status">Saving…</p>}
         <div className="grid gap-2">
-          <button onClick={signout} className="h-11 rounded-xl border border-line bg-white font-semibold">Sign out</button>
-          <button onClick={wipe} className="h-11 rounded-xl border border-alert text-alert bg-white font-semibold">Delete my data</button>
+          <button onClick={signout} disabled={busy} className="h-11 rounded-xl border border-line bg-white font-semibold">Sign out</button>
+          <button onClick={wipe} disabled={busy} className="h-11 rounded-xl border border-alert text-alert bg-white font-semibold">Delete my data</button>
         </div>
       </div>
     </Sheet>
