@@ -27,9 +27,13 @@ export function useAppState() {
 }
 
 export async function post(url: string, body: unknown, method = 'POST') {
-  const r = await fetch(url, { method, headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
-  const data = await r.json().catch(() => ({}));
-  return { ok: r.ok, status: r.status, data };
+  try {
+    const r = await fetch(url, { method, headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+    const data = await r.json().catch(() => ({ error: 'The server returned an unreadable response. Please try again.' }));
+    return { ok: r.ok, status: r.status, data };
+  } catch {
+    return { ok: false, status: 0, data: { error: 'Could not reach Goalpocket. Check your connection and try again.' } };
+  }
 }
 
 const TABS = [
