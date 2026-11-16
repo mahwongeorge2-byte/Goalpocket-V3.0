@@ -40,7 +40,7 @@ const LABELS: Record<string, string> = {
   fees: 'Fees', savings: 'Savings', income: 'Income', other: 'Other',
 };
 
-export async function runChat(uid: string, text: string, opts: { today?: string; create?: CreateFn | null } = {}): Promise<ChatResult> {
+export async function runChat(uid: string, text: string, opts: { today?: string; create?: CreateFn | null; conversationId?: string } = {}): Promise<ChatResult> {
   const empty = { cards: [], ask: null, affordability: null, numberCheck: 'passed' as const };
   const message = text.trim();
   if (!message) return { ...empty, reply: 'Type what you spent or earned, or ask about your money.' };
@@ -56,15 +56,15 @@ export async function runChat(uid: string, text: string, opts: { today?: string;
     if (await hitRateLimit(tx, uid)) return null;
     const { ledger, profile } = await loadLedger(tx, opts.today);
     const rules = await categoryRules(tx);
-    const history = await chatHistory(tx, 6);
-    await addChat(tx, uid, 'user', { text: message });
-    return { ledger, profile, rules, history };
+    const history = await chatHistory(tx, 6, opts.conversationId);
+    const conversationId = await addChat(tx, uid, 'user', { text: message }, opts.conversationId);
+    return { ledger, profile, rules, history, conversationId };
   });
   if (!ctx) return { ...empty, reply: 'You are sending messages very fast. Please wait a minute and try again.', error: 'rate_limited' };
 
   if (!create) {
     const reply = 'The AI is not connected yet, so I cannot read messages. You can still add entries with the + button on the Money tab.';
-    await asUser(uid, (tx) => addChat(tx, uid, 'assistant', { text: reply }));
+    await asUser(uid, (tx) => addChat(tx, uid, 'assistant', { text: reply }, ctx.conversationId));
     return { ...empty, reply, error: 'no_api_key' };
   }
 
@@ -151,7 +151,7 @@ export async function runChat(uid: string, text: string, opts: { today?: string;
   return await finish();
 
   async function finish(error?: ChatResult['error']): Promise<ChatResult> {
-    await asUser(uid, (tx) => addChat(tx, uid, 'assistant', { text: reply, cards: cards.map((c) => c.pendingId), ask, affordability: afford }));
+    await asUser(uid, (tx) => addChat(tx, uid, 'assistant', { text: reply, cards: cards.map((c) => c.pendingId), ask, affordability: afford }, ctx.conversationId));
     return { reply, cards, ask, affordability: afford, numberCheck, ...(demoMode ? { demoMode } : {}), ...(error ? { error } : {}) };
   }
 }
