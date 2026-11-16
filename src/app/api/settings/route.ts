@@ -18,7 +18,10 @@ export async function POST(req: Request) {
   if (!b.success) return fail('Bad request');
   const a = b.data;
   if (a.action === 'rate') await asUser(uid, (tx) => tx`insert into exchange_rates (user_id, lrd_per_usd, note) values (${uid}, ${a.lrdPerUsd}, 'Changed in settings')`);
-  if (a.action === 'spendable') await asUser(uid, (tx) => tx`update pockets set spendable = ${a.spendable} where id = ${a.pocketId}`);
+  if (a.action === 'spendable') {
+    const rows = await asUser(uid, (tx) => tx`update pockets set spendable = ${a.spendable} where id = ${a.pocketId} returning id`);
+    if (!rows.length) return fail('Pocket not found. Refresh and try again.', 404);
+  }
   if (a.action === 'signout') await clearSession();
   if (a.action === 'delete_my_data') { await sql`delete from app_users where id = ${uid}`; await clearSession(); }
   return json({ ok: true });
