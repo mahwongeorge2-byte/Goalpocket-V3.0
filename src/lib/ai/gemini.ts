@@ -105,24 +105,18 @@ export async function geminiCreate(params: CreateParams): Promise<BetaMessage> {
     },
   }));
 
-  const response = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: p.model,
-      messages,
-      ...(tools.length ? { tools, tool_choice: 'auto' } : {}),
-      max_tokens: p.max_tokens ?? 2000,
-      temperature: 0.2,
-    }),
-    signal: AbortSignal.timeout(50_000),
+  const requestBody = JSON.stringify({
+    model: p.model,
+    messages,
+    ...(tools.length ? { tools, tool_choice: 'auto' } : {}),
+    max_tokens: p.max_tokens ?? 2000,
+    temperature: 0.2,
   });
 
-  const payload = await response.json().catch(() => ({})) as {
+  let response: Response;
+  let payload: {
     error?: { message?: string };
+    message?: string;
     choices?: Array<{
       finish_reason?: string | null;
       message?: {
@@ -132,10 +126,34 @@ export async function geminiCreate(params: CreateParams): Promise<BetaMessage> {
       };
     }>;
     usage?: { prompt_tokens?: number; completion_tokens?: number };
-  };
+  } = {};
+
+  // Retry temporary Gemini capacity errors twice with a short exponential delay.
+  for (let attempt = 0; ; attempt++) {
+    response = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: requestBody,
+      signal: AbortSignal.timeout(50_000),
+    });
+
+    const responseText = await response.text();
+    try {
+      payload = JSON.parse(responseText) as typeof payload;
+    } catch {
+      payload = {};
+    }
+
+    if (response.status !== 503 || attempt >= 2) break;
+    await new Promise((resolve) => setTimeout(resolve, 1000 * (2 ** attempt)));
+  }
 
   if (!response.ok) {
-    throw new Error(`Gemini API HTTP ${response.status}: ${payload.error?.message ?? 'request rejected'}`);
+    const detail = payload.error?.message ?? payload.message ?? response.statusText ?? 'No provider details returned';
+    throw new Error(`Gemini API HTTP ${response.status}: ${detail}`);
   }
 
   const choice = payload.choices?.[0];
