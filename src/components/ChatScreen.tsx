@@ -20,20 +20,86 @@ export default function ChatScreen() {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [demo, setDemo] = useState(false);
+  const [conversations, setConversations] = useState<{ id: string; title: string; updatedAt: string }[]>([]);
+  const [conversationId, setConversationId] = useState('');
+  const [historyBusy, setHistoryBusy] = useState(true);
   const end = useRef<HTMLDivElement>(null);
 
+  async function refreshConversations() {
+    const r = await fetch('/api/conversations', { cache: 'no-store' });
+    if (r.ok) setConversations(await r.json());
+  }
+
+  async function openConversation(id: string) {
+    setHistoryBusy(true);
+    setConversationId(id);
+    setMsgs([]);
+    const r = await fetch(`/api/chat?conversationId=${encodeURIComponent(id)}`, { cache: 'no-store' });
+    const rows = r.ok ? await r.json() as { role: 'user' | 'assistant'; text: string }[] : [];
+    setMsgs(rows.filter((x) => x.text).map((x) => ({ id: nid(), role: x.role, text: x.text })));
+    setHistoryBusy(false);
+  }
+
+  async function startNewChat() {
+    if (busy || historyBusy) return;
+    setHistoryBusy(true);
+    const r = await post('/api/conversations', {});
+    if (r.ok && typeof r.data.id === 'string') {
+      await refreshConversations();
+      setConversationId(r.data.id);
+      setMsgs([]);
+    }
+    setHistoryBusy(false);
+  }
+
+  async function deleteCurrentChat() {
+    if (!conversationId || busy || historyBusy) return;
+    if (!window.confirm('Delete this chat and its messages? Your saved money records will not be affected.')) return;
+    setHistoryBusy(true);
+    const r = await fetch(`/api/conversations/${conversationId}`, { method: 'DELETE' });
+    if (r.ok) {
+      const list = await fetch('/api/conversations', { cache: 'no-store' }).then((x) => x.ok ? x.json() : []);
+      setConversations(list);
+      if (list[0]?.id) await openConversation(list[0].id);
+      else {
+        const created = await post('/api/conversations', {});
+        if (created.ok && typeof created.data.id === 'string') {
+          setConversationId(created.data.id);
+          setMsgs([]);
+          await refreshConversations();
+        }
+        setHistoryBusy(false);
+      }
+    } else setHistoryBusy(false);
+  }
+
   useEffect(() => {
-    fetch('/api/chat').then((r) => (r.ok ? r.json() : [])).then((rows: { role: 'user' | 'assistant'; text: string }[]) =>
-      setMsgs(rows.filter((r) => r.text).map((r) => ({ id: nid(), role: r.role, text: r.text }))));
+    let live = true;
+    (async () => {
+      const r = await fetch('/api/conversations', { cache: 'no-store' });
+      let list = r.ok ? await r.json() as { id: string; title: string; updatedAt: string }[] : [];
+      if (!live) return;
+      if (!list.length) {
+        const created = await post('/api/conversations', {});
+        if (created.ok && typeof created.data.id === 'string') {
+          list = [{ id: created.data.id, title: 'New chat', updatedAt: new Date().toISOString() }];
+        }
+      }
+      if (!live) return;
+      setConversations(list);
+      if (list[0]?.id) await openConversation(list[0].id);
+      else setHistoryBusy(false);
+    })();
+    return () => { live = false; };
   }, []);
   useEffect(() => { end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [msgs, busy]);
 
   async function send(message: string) {
     const m = message.trim();
-    if (!m || busy) return;
+    if (!m || busy || !conversationId || historyBusy) return;
     setText(''); setBusy(true);
     setMsgs((x) => [...x, { id: nid(), role: 'user', text: m }]);
-    const r = await post('/api/chat', { message: m });
+    const r = await post('/api/chat', { message: m, conversationId });
     const res = r.data as ChatResult & { error?: string };
     const add: Msg[] = [];
     if (!r.ok) add.push({ id: nid(), role: 'assistant', text: res.error ?? 'Something went wrong. Please try again.' });
@@ -44,14 +110,26 @@ export default function ChatScreen() {
       for (const c of res.cards ?? []) add.push({ id: nid(), role: 'card', card: c, status: 'open' });
       if (res.ask) add.push({ id: nid(), role: 'ask', question: res.ask.question, options: res.ask.options, used: false });
     }
-    setMsgs((x) => [...x, ...add]); setBusy(false);
+    setMsgs((x) => [...x, ...add]); setBusy(false); void refreshConversations();
   }
 
   const setMsg = (id: string, patch: Partial<Msg>) => setMsgs((x) => x.map((m) => (m.id === id ? ({ ...m, ...patch } as Msg) : m)));
 
   return (
-    <Shell title="Goalpocket" right={state && <span className="text-xs text-muted num">{state.rate ? `L$${state.rate} = $1` : ''}</span>}>
+    <Shell title="Goalpocket" right={state && <span className="text-xs text-muted num">{state.rate ? `L${state.rate} = $1` : ''}</span>}>
+      <div className="px-4 pt-3 grid gap-2">
+        <div className="flex gap-2">
+          <button onClick={startNewChat} disabled={busy || historyBusy} className="flex-1 h-10 rounded-xl bg-green text-white text-sm font-semibold">+ New Chat</button>
+          <button onClick={deleteCurrentChat} disabled={!conversationId || busy || historyBusy} className="h-10 px-3 rounded-xl border border-line bg-white text-sm">Delete chat</button>
+        </div>
+        <label className="text-xs font-semibold text-muted" htmlFor="chat-history">Chat History</label>
+        <select id="chat-history" aria-label="Chat History" className={field} value={conversationId} disabled={historyBusy || conversations.length === 0}
+          onChange={(e) => { const id = e.target.value; if (id) void openConversation(id); }}>
+          {conversations.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+        </select>
+      </div>
       <div className="flex-1 px-4 py-4 grid gap-3 content-start" aria-live="polite">
+        {historyBusy && <p className="text-xs text-muted text-center">Loading chat history…</p>}
         {demo && <p className="text-xs text-caution bg-gold-tint rounded-lg px-3 py-2">Demo mode: no AI is connected. Simple pattern matching reads your messages, so it understands less. All numbers still come from the same checked maths.</p>}
         {msgs.length === 0 && (
           <div className="rounded-2xl bg-white border border-line p-4">
