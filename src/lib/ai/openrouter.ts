@@ -1,0 +1,199 @@
+import 'server-only';
+import type Anthropic from '@anthropic-ai/sdk';
+import type { BetaMessage, BetaMessageParam } from '@anthropic-ai/sdk/resources/beta/messages/messages';
+
+type CreateParams = Parameters<Anthropic['beta']['messages']['create']>[0];
+type Msg = { role: 'user' | 'assistant'; content: string | Array<Record<string, unknown>> };
+type ToolDef = { name: string; description?: string; input_schema: unknown };
+type OpenAITool = { type: 'function'; function: { name: string; description?: string; parameters: unknown } };
+
+/**
+ * OpenRouter function declarations accept a narrower OpenAPI schema than the
+ * Anthropic-shaped schemas used by Goalpocket. Normalize nullable fields and
+ * remove JSON Schema keywords Gemini function calling does not support.
+ */
+function toOpenRouterSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(toOpenRouterSchema);
+  if (!value || typeof value !== 'object') return value;
+
+  const source = value as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+
+  for (const [key, raw] of Object.entries(source)) {
+    if (key === 'additionalProperties' || key === 'strict') continue;
+    if (key === 'type' && Array.isArray(raw)) {
+      const types = raw.filter((item) => item !== 'null');
+      result.type = types[0] ?? 'string';
+      if (raw.includes('null')) result.nullable = true;
+      continue;
+    }
+    if (key === 'enum' && Array.isArray(raw)) {
+      result.enum = raw.filter((item) => item !== null);
+      continue;
+    }
+    result[key] = toOpenRouterSchema(raw);
+  }
+
+  return result;
+}
+
+/** Adapt Goalpocket's existing Anthropic-shaped tool loop to OpenRouter's OpenAI-compatible API. */
+export async function openrouterCreate(params: CreateParams): Promise<BetaMessage> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) throw new Error('OPENROUTER_API_KEY is not configured');
+
+  const p = params as unknown as {
+    model: string;
+    max_tokens?: number;
+    system?: string | Array<{ text?: string }>;
+    messages: Msg[];
+    tools?: ToolDef[];
+  };
+
+  const messages: Record<string, unknown>[] = [];
+  const systemText = typeof p.system === 'string'
+    ? p.system
+    : (p.system ?? []).map((part) => part.text ?? '').filter(Boolean).join('\n');
+
+  if (systemText) messages.push({ role: 'system', content: systemText });
+
+  for (const message of p.messages) {
+    if (typeof message.content === 'string') {
+      messages.push({ role: message.role, content: message.content });
+      continue;
+    }
+
+    if (message.role === 'assistant') {
+      const text = message.content
+        .filter((b) => b.type === 'text')
+        .map((b) => String(b.text ?? ''))
+        .join('\n');
+      const toolCalls = message.content
+        .filter((b) => b.type === 'tool_use')
+        .map((b, index) => ({
+          id: String(b.id ?? `goalpocket_call_${index}`),
+          type: 'function',
+          function: { name: String(b.name), arguments: JSON.stringify(b.input ?? {}) },
+        }));
+      messages.push({
+        role: 'assistant',
+        content: text || null,
+        ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
+      });
+      continue;
+    }
+
+    // Anthropic tool results become OpenAI-compatible tool messages.
+    for (const block of message.content.filter((b) => b.type === 'tool_result')) {
+      const content = typeof block.content === 'string'
+        ? block.content
+        : JSON.stringify(block.content ?? {});
+      messages.push({
+        role: 'tool',
+        tool_call_id: String(block.tool_use_id ?? ''),
+        content,
+      });
+    }
+  }
+
+  const tools: OpenAITool[] = (p.tools ?? []).map((tool) => ({
+    type: 'function',
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: toOpenRouterSchema(tool.input_schema),
+    },
+  }));
+
+  const requestBody = JSON.stringify({
+    model: p.model,
+    messages,
+    ...(tools.length ? { tools, tool_choice: 'auto' } : {}),
+    max_tokens: p.max_tokens ?? 2000,
+    temperature: 0.2,
+  });
+
+  let response: Response;
+  let payload: {
+    error?: { message?: string };
+    message?: string;
+    choices?: Array<{
+      finish_reason?: string | null;
+      message?: {
+        content?: string | null;
+        refusal?: string | null;
+        tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }>;
+      };
+    }>;
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
+  } = {};
+
+  // Retry temporary provider capacity errors twice with a short exponential delay.
+  for (let attempt = 0; ; attempt++) {
+    response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: requestBody,
+      signal: AbortSignal.timeout(50_000),
+    });
+
+    const responseText = await response.text();
+    try {
+      payload = JSON.parse(responseText) as typeof payload;
+    } catch {
+      payload = {};
+    }
+
+    if (response.status !== 503 || attempt >= 2) break;
+    await new Promise((resolve) => setTimeout(resolve, 1000 * (2 ** attempt)));
+  }
+
+  if (!response.ok) {
+    const detail = payload.error?.message ?? payload.message ?? response.statusText ?? 'No provider details returned';
+    throw new Error(`OpenRouter API HTTP ${response.status}: ${detail}`);
+  }
+
+  const choice = payload.choices?.[0];
+  const answer = choice?.message;
+  if (!answer) throw new Error('OpenRouter returned an empty response');
+
+  const content: BetaMessage['content'] = [];
+  if (answer.content) {
+    content.push({ type: 'text', text: answer.content, citations: null } as BetaMessage['content'][number]);
+  }
+  for (const [index, call] of (answer.tool_calls ?? []).entries()) {
+    let input: Record<string, unknown> = {};
+    try {
+      const parsed: unknown = JSON.parse(call.function?.arguments ?? '{}');
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) input = parsed as Record<string, unknown>;
+    } catch {
+      throw new Error('OpenRouter returned invalid tool arguments');
+    }
+    content.push({
+      type: 'tool_use',
+      id: call.id ?? `openrouter_call_${index}`,
+      name: call.function?.name ?? '',
+      input,
+    } as BetaMessage['content'][number]);
+  }
+
+  const finish = choice?.finish_reason;
+  const stopReason = answer.refusal ? 'refusal' : (answer.tool_calls?.length ? 'tool_use' : finish === 'length' ? 'max_tokens' : 'end_turn');
+
+  return {
+    id: `openrouter_${Date.now()}`,
+    type: 'message',
+    role: 'assistant',
+    model: p.model,
+    content,
+    stop_reason: stopReason,
+    stop_sequence: null,
+    usage: {
+      input_tokens: payload.usage?.prompt_tokens ?? 0,
+      output_tokens: payload.usage?.completion_tokens ?? 0,
+    },
+  } as BetaMessage;
+}
