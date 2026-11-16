@@ -13,6 +13,7 @@ type Msg =
 const STARTERS = ['Spent L$500 on keke and L$300 on data from MoMo', 'Can I afford a $120 phone?', 'How much did I spend this week?'];
 let seq = 0;
 const nid = () => `m${++seq}`;
+type Conversation = { id: string; title: string; createdAt: string; updatedAt: string };
 
 export default function ChatScreen() {
   const { state, reload } = useAppState();
@@ -20,20 +21,61 @@ export default function ChatScreen() {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [demo, setDemo] = useState(false);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState('');
+  const [historyBusy, setHistoryBusy] = useState(true);
   const end = useRef<HTMLDivElement>(null);
 
+  async function loadConversation(id: string) {
+    setHistoryBusy(true);
+    const r = await fetch(`/api/chat?conversationId=${encodeURIComponent(id)}`, { cache: 'no-store' });
+    const rows = r.ok ? await r.json() as { role: 'user' | 'assistant'; text: string }[] : [];
+    setMsgs(rows.filter((x) => x.text).map((x) => ({ id: nid(), role: x.role, text: x.text })));
+    setActiveConversationId(id);
+    setDemo(false);
+    setHistoryBusy(false);
+  }
+
+  async function refreshConversations() {
+    const r = await fetch('/api/chat/conversations', { cache: 'no-store' });
+    if (r.ok) setConversations(await r.json() as Conversation[]);
+  }
+
   useEffect(() => {
-    fetch('/api/chat').then((r) => (r.ok ? r.json() : [])).then((rows: { role: 'user' | 'assistant'; text: string }[]) =>
-      setMsgs(rows.filter((r) => r.text).map((r) => ({ id: nid(), role: r.role, text: r.text }))));
+    let cancelled = false;
+    (async () => {
+      let r = await fetch('/api/chat/conversations', { cache: 'no-store' });
+      let rows: Conversation[] = r.ok ? await r.json() as Conversation[] : [];
+      if (!rows.length) {
+        const created = await post('/api/chat/conversations', {});
+        if (created.ok) rows = [created.data as Conversation];
+      }
+      if (cancelled) return;
+      setConversations(rows);
+      if (rows[0]) await loadConversation(rows[0].id);
+      else setHistoryBusy(false);
+    })();
+    return () => { cancelled = true; };
   }, []);
   useEffect(() => { end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [msgs, busy]);
 
+  async function startNewConversation() {
+    if (busy || historyBusy) return;
+    const r = await post('/api/chat/conversations', {});
+    if (!r.ok) return;
+    const conversation = r.data as Conversation;
+    setConversations((items) => [conversation, ...items]);
+    setActiveConversationId(conversation.id);
+    setMsgs([]);
+    setDemo(false);
+  }
+
   async function send(message: string) {
     const m = message.trim();
-    if (!m || busy) return;
+    if (!m || busy || !activeConversationId || historyBusy) return;
     setText(''); setBusy(true);
     setMsgs((x) => [...x, { id: nid(), role: 'user', text: m }]);
-    const r = await post('/api/chat', { message: m });
+    const r = await post('/api/chat', { message: m, conversationId: activeConversationId });
     const res = r.data as ChatResult & { error?: string };
     const add: Msg[] = [];
     if (!r.ok) add.push({ id: nid(), role: 'assistant', text: res.error ?? 'Something went wrong. Please try again.' });
@@ -45,13 +87,21 @@ export default function ChatScreen() {
       if (res.ask) add.push({ id: nid(), role: 'ask', question: res.ask.question, options: res.ask.options, used: false });
     }
     setMsgs((x) => [...x, ...add]); setBusy(false);
+    void refreshConversations();
   }
 
   const setMsg = (id: string, patch: Partial<Msg>) => setMsgs((x) => x.map((m) => (m.id === id ? ({ ...m, ...patch } as Msg) : m)));
 
   return (
-    <Shell title="Goalpocket" right={state && <span className="text-xs text-muted num">{state.rate ? `L$${state.rate} = $1` : ''}</span>}>
+    <Shell title="Goalpocket" right={<div className="flex items-center gap-2">{state && <span className="text-xs text-muted num">{state.rate ? `L${state.rate} = $1` : ''}</span>}<button onClick={startNewConversation} disabled={busy || historyBusy} className="text-xs font-semibold text-green border border-green rounded-lg px-2.5 py-2 disabled:opacity-40">+ New chat</button></div>}>
+      <div className="px-4 pt-3">
+        <label htmlFor="chat-history" className="sr-only">Previous conversations</label>
+        <select id="chat-history" value={activeConversationId} disabled={historyBusy || busy || conversations.length === 0} onChange={(e) => void loadConversation(e.target.value)} className={field}>
+          {conversations.length === 0 ? <option value="">No previous conversations</option> : conversations.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+        </select>
+      </div>
       <div className="flex-1 px-4 py-4 grid gap-3 content-start" aria-live="polite">
+        {historyBusy && <p className="text-sm text-muted">Loading your conversations…</p>}
         {demo && <p className="text-xs text-caution bg-gold-tint rounded-lg px-3 py-2">Demo mode: no AI is connected. Simple pattern matching reads your messages, so it understands less. All numbers still come from the same checked maths.</p>}
         {msgs.length === 0 && (
           <div className="rounded-2xl bg-white border border-line p-4">
@@ -85,7 +135,7 @@ export default function ChatScreen() {
       <form onSubmit={(e) => { e.preventDefault(); send(text); }} className="sticky bottom-16 bg-paper border-t border-line p-3 flex gap-2">
         <label className="sr-only" htmlFor="msg">Message</label>
         <input id="msg" value={text} onChange={(e) => setText(e.target.value)} maxLength={500} placeholder="Spent L$500 on keke…" className={field} autoComplete="off" />
-        <button disabled={busy || !text.trim()} className="h-11 px-4 rounded-xl bg-green text-white font-semibold">Send</button>
+        <button disabled={busy || historyBusy || !activeConversationId || !text.trim()} className="h-11 px-4 rounded-xl bg-green text-white font-semibold">Send</button>
       </form>
     </Shell>
   );
