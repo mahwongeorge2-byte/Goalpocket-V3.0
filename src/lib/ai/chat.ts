@@ -134,8 +134,17 @@ export async function runChat(uid: string, text: string, opts: { today?: string;
       if (step === MAX_STEPS - 1) reply = fallbackReply(cards, afford);
     }
   } catch (e) {
-    console.error('AI call failed', e instanceof Error ? e.message : e);
-    reply = cards.length || afford ? fallbackReply(cards, afford) : 'I could not reach the AI just now. Please try again in a moment, or add the entry with the + button.';
+    const detail = e instanceof Error ? e.message : String(e);
+    console.error('AI call failed', detail);
+    const safeDetail = detail
+      .replace(/AIza[0-9A-Za-z_-]{20,}/g, '[redacted key]')
+      .replace(/AQ\\.[A-Za-z0-9_-]{20,}/g, '[redacted key]')
+      .replace(/Bearer\\s+\\S+/gi, 'Bearer [redacted]')
+      .replace(/\\s+/g, ' ')
+      .slice(0, 220);
+    reply = cards.length || afford
+      ? fallbackReply(cards, afford)
+      : `I could not reach the AI just now. Please try again in a moment, or add the entry with the + button.\\n\\nDiagnostic: ${safeDetail}`;
     return await finish('ai_unavailable');
   }
   if (!reply) reply = fallbackReply(cards, afford);
