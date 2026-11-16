@@ -1,7 +1,8 @@
 import 'server-only';
 import { offlineCreate, DEMO_MODE_HELP } from './offline';
-import Anthropic from '@anthropic-ai/sdk';
+import type Anthropic from '@anthropic-ai/sdk';
 import type { BetaMessage, BetaMessageParam, BetaToolResultBlockParam, BetaToolUseBlock } from '@anthropic-ai/sdk/resources/beta/messages/messages';
+import { geminiCreate } from './gemini';
 import { asUser } from '../db';
 import { loadLedger, categoryRules, chatHistory, addChat, createPending, hitRateLimit, recentTransactions } from '../repo';
 import { affordability, budgetStatus, goalStatus, periodSummary, pocketBalances, totals, type Affordability, type Ledger } from '../engine';
@@ -12,7 +13,7 @@ import { SYSTEM_PROMPT, contextBlock } from './prompt';
 import { unbackedNumbers } from './numbercheck';
 import { validateTxnItem, buildTransfer, buildGoal, buildContribution, buildBudget, describePending, type Pending } from '../actions';
 
-export const MODEL = process.env.GOALPOCKET_MODEL || 'claude-opus-5-5';
+export const MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 const MAX_STEPS = 6;
 const MAX_INPUT = 500;
 
@@ -29,14 +30,10 @@ export type ChatResult = {
 
 type CreateFn = (params: Parameters<Anthropic['beta']['messages']['create']>[0]) => Promise<BetaMessage>;
 
-let _client: Anthropic | null = null;
 function defaultCreate(): CreateFn | null {
-  if (!process.env.ANTHROPIC_API_KEY) return null;
-  _client ??= new Anthropic();
-  const c = _client;
-  return (p) => c.beta.messages.create({ ...p, stream: false }) as Promise<BetaMessage>;
+  if (!process.env.GEMINI_API_KEY) return null;
+  return geminiCreate as CreateFn;
 }
-
 const LABELS: Record<string, string> = {
   food: 'Food', transport: 'Transport', housing: 'Housing', utilities: 'Utilities', education: 'Education', health: 'Health',
   phone_data: 'Phone & Data', entertainment: 'Entertainment', shopping: 'Shopping', business: 'Business', family: 'Family & Support',
