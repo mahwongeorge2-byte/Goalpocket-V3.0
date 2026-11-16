@@ -4,7 +4,7 @@
 
 Know what's in every pocket. A chat-first money companion for cash, Orange Money, MoMo and susu, in US and Liberian dollars.
 
-Hackathon prototype (Stage 5). Not financial advice. Goalpocket never asks for PINs or passwords and never moves money.
+Hackathon prototype (Stage 5). **This project is a prototype and is not financial advice.** Goalpocket never asks for PINs or passwords and never moves money.
 
 ## What works
 
@@ -57,6 +57,6 @@ The chat tests use a fake model and demo mode, so they cost nothing and need no 
 
 ## Deploy (Vercel + Supabase)
 
-1. Create a Supabase project. Create the app role by hand (`create role gp_app login password '...'`), then run `db/001_schema.sql`, `db/002_supabase.sql`, and `db/003_goal_withdrawals.sql` in its SQL editor, in that order. Use the pooler connection string for `gp_app` as `DATABASE_URL`.
+1. Create a Supabase project. Create the app role by hand (`create role gp_app login password '...'`), then run `db/001_schema.sql`, `db/002_supabase.sql`, `db/003_goal_withdrawals.sql`, and `db/004_chat_conversations.sql` in its SQL editor, in that order. Use the pooler connection string for `gp_app` as `DATABASE_URL`.
 2. Push this folder to an empty GitHub repository.
 3. Import the repository in Vercel. Add the settings above. Deploy.
