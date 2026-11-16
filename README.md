@@ -15,7 +15,7 @@ Hackathon prototype (Stage 5). **This project is a prototype and is not financia
 
 ## Demo mode (no API key, no cost)
 
-With no `GEMINI_API_KEY`, the chat runs in **demo mode**. Plain pattern matching (`src/lib/ai/offline.ts`) reads simple messages such as "Spent L$500 on keke from MoMo", "Earned $20 from sales", "Can I afford a $120 phone?", "How much did I spend this week?", "What is my balance?" and "How is my goal?". It is not AI and understands much less, and the app says so on screen. It uses the same tools, checks, confirm cards and maths as the real AI. Set `GOALPOCKET_DEMO_MODE=off` to turn it off.
+With no `OPENROUTER_API_KEY`, the chat runs in **demo mode**. Plain pattern matching (`src/lib/ai/offline.ts`) reads simple messages such as "Spent L$500 on keke from MoMo", "Earned $20 from sales", "Can I afford a $120 phone?", "How much did I spend this week?", "What is my balance?" and "How is my goal?". It is not AI and understands much less, and the app says so on screen. It uses the same tools, checks, confirm cards and maths as the real AI. Set `GOALPOCKET_DEMO_MODE=off` to turn it off.
 
 ## How the numbers stay honest
 
@@ -42,8 +42,8 @@ Settings (`.env.local`, or Vercel project settings). **Never put real keys in co
 |---|---|
 | `DATABASE_URL` | Postgres connection string. Use a database user that is *not* a superuser, so row-level security applies. |
 | `SESSION_SECRET` | Any long random text, 32 characters or more. |
-| `GEMINI_API_KEY` | Gemini API key. Without it the chat runs in demo mode (see above). |
-| `GEMINI_MODEL` | Optional. Defaults to `gemini-3.8-flash`. |
+| `OPENROUTER_API_KEY` | OpenRouter API key. Without it the chat runs in demo mode (see above). |
+| `OPENROUTER_MODEL` | Optional. Defaults to `openrouter/free`. |
 
 ## Tests
 

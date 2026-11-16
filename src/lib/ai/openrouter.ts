@@ -8,12 +8,12 @@ type ToolDef = { name: string; description?: string; input_schema: unknown };
 type OpenAITool = { type: 'function'; function: { name: string; description?: string; parameters: unknown } };
 
 /**
- * Gemini function declarations accept a narrower OpenAPI schema than the
+ * OpenRouter function declarations accept a narrower OpenAPI schema than the
  * Anthropic-shaped schemas used by Goalpocket. Normalize nullable fields and
- * remove JSON Schema keywords Gemini function calling does not support.
+ * remove JSON Schema keywords that are not needed by OpenRouter's function-calling endpoint.
  */
-function toGeminiSchema(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(toGeminiSchema);
+function toOpenRouterSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(toOpenRouterSchema);
   if (!value || typeof value !== 'object') return value;
 
   const source = value as Record<string, unknown>;
@@ -31,16 +31,16 @@ function toGeminiSchema(value: unknown): unknown {
       result.enum = raw.filter((item) => item !== null);
       continue;
     }
-    result[key] = toGeminiSchema(raw);
+    result[key] = toOpenRouterSchema(raw);
   }
 
   return result;
 }
 
-/** Adapt Goalpocket's existing Anthropic-shaped tool loop to Gemini's OpenAI-compatible API. */
-export async function geminiCreate(params: CreateParams): Promise<BetaMessage> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY is not configured');
+/** Adapt Goalpocket's existing Anthropic-shaped tool loop to OpenRouter's OpenAI-compatible API. */
+export async function openrouterCreate(params: CreateParams): Promise<BetaMessage> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) throw new Error('OPENROUTER_API_KEY is not configured');
 
   const p = params as unknown as {
     model: string;
@@ -101,7 +101,7 @@ export async function geminiCreate(params: CreateParams): Promise<BetaMessage> {
     function: {
       name: tool.name,
       description: tool.description,
-      parameters: toGeminiSchema(tool.input_schema),
+      parameters: toOpenRouterSchema(tool.input_schema),
     },
   }));
 
@@ -128,9 +128,9 @@ export async function geminiCreate(params: CreateParams): Promise<BetaMessage> {
     usage?: { prompt_tokens?: number; completion_tokens?: number };
   } = {};
 
-  // Retry temporary Gemini capacity errors twice with a short exponential delay.
+  // Retry temporary provider capacity errors twice with a short exponential delay.
   for (let attempt = 0; ; attempt++) {
-    response = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
+    response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -153,12 +153,12 @@ export async function geminiCreate(params: CreateParams): Promise<BetaMessage> {
 
   if (!response.ok) {
     const detail = payload.error?.message ?? payload.message ?? response.statusText ?? 'No provider details returned';
-    throw new Error(`Gemini API HTTP ${response.status}: ${detail}`);
+    throw new Error(`OpenRouter API HTTP ${response.status}: ${detail}`);
   }
 
   const choice = payload.choices?.[0];
   const answer = choice?.message;
-  if (!answer) throw new Error('Gemini returned an empty response');
+  if (!answer) throw new Error('OpenRouter returned an empty response');
 
   const content: BetaMessage['content'] = [];
   if (answer.content) {
@@ -170,11 +170,11 @@ export async function geminiCreate(params: CreateParams): Promise<BetaMessage> {
       const parsed: unknown = JSON.parse(call.function?.arguments ?? '{}');
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) input = parsed as Record<string, unknown>;
     } catch {
-      throw new Error('Gemini returned invalid tool arguments');
+      throw new Error('OpenRouter returned invalid tool arguments');
     }
     content.push({
       type: 'tool_use',
-      id: call.id ?? `gemini_call_${index}`,
+      id: call.id ?? `openrouter_call_${index}`,
       name: call.function?.name ?? '',
       input,
     } as BetaMessage['content'][number]);
@@ -184,7 +184,7 @@ export async function geminiCreate(params: CreateParams): Promise<BetaMessage> {
   const stopReason = answer.refusal ? 'refusal' : (answer.tool_calls?.length ? 'tool_use' : finish === 'length' ? 'max_tokens' : 'end_turn');
 
   return {
-    id: `gemini_${Date.now()}`,
+    id: `openrouter_${Date.now()}`,
     type: 'message',
     role: 'assistant',
     model: p.model,
