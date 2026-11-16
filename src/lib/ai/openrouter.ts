@@ -10,7 +10,7 @@ type OpenAITool = { type: 'function'; function: { name: string; description?: st
 /**
  * OpenRouter function declarations accept a narrower OpenAPI schema than the
  * Anthropic-shaped schemas used by Goalpocket. Normalize nullable fields and
- * remove JSON Schema keywords Gemini function calling does not support.
+ * remove JSON Schema keywords that are not needed by OpenRouter's function-calling endpoint.
  */
 function toOpenRouterSchema(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(toOpenRouterSchema);
