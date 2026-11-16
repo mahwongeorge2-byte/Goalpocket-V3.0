@@ -8,7 +8,7 @@ export async function GET() {
   const checks: Record<string, string> = {
     DATABASE_URL: process.env.DATABASE_URL ? 'set' : 'MISSING',
     SESSION_SECRET: (process.env.SESSION_SECRET ?? '').length >= 32 ? 'set' : 'MISSING or shorter than 32 characters',
-    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ? 'set (live AI)' : 'not set (demo chat mode, this is fine)',
+    GEMINI_API_KEY: process.env.GEMINI_API_KEY ? 'set (Gemini AI configured)' : 'not set (demo chat mode, this is fine)',
   };
   try {
     const [r] = await sql`select count(*)::int as n from categories`;
