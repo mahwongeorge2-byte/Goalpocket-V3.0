@@ -12,7 +12,7 @@ export const GET = guarded(async (req: Request) => {
   if (!uid) return fail('Not signed in', 401);
   const conversationId = new URL(req.url).searchParams.get('conversationId') ?? undefined;
   const rows = await asUser(uid, (tx) => chatHistory(tx, 100, conversationId));
-  return json(rows.map((r) => ({ role: r.role, text: (r.content as { text?: string })?.text ?? '' })));
+  return json(rows.map((r) => ({ id: r.id, role: r.role, text: (r.content as { text?: string })?.text ?? '' })));
 });
 
 export const POST = guarded(async (req: Request) => {
