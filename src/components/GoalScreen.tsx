@@ -23,6 +23,7 @@ export default function GoalScreen() {
     e.preventDefault(); setGMsg('');
     const n = Number(gf.target.replace(/,/g, ''));
     if (!gf.name.trim() || !(n > 0) || !gf.date) return setGMsg('Enter a name, an amount and a date.');
+    if (g && !window.confirm(`Replace your current goal “${g.goal.name}” with “${gf.name.trim()}”? The old goal will be archived; its history will remain.`)) return;
     setGBusy(true);
     const r = await post('/api/goals', { action: 'goal', name: gf.name.trim(), target_amount: n, currency: gf.cur, target_date: gf.date });
     setGBusy(false);
@@ -87,7 +88,7 @@ export default function GoalScreen() {
               <input aria-label="Target amount" inputMode="decimal" className={field} placeholder="Amount" value={gf.target} onChange={(e) => setGf({ ...gf, target: e.target.value })} />
               <select aria-label="Goal currency" className="h-11 rounded-xl border border-line bg-white px-2" value={gf.cur} onChange={(e) => setGf({ ...gf, cur: e.target.value as 'USD' | 'LRD' })}><option>USD</option><option>LRD</option></select>
             </div>
-            <label className="grid gap-1 text-sm">By when?<input type="date" className={field} value={gf.date} onChange={(e) => setGf({ ...gf, date: e.target.value })} /></label>
+            <label className="grid gap-1 text-sm">By when?<input type="date" min={state.today} className={field} value={gf.date} onChange={(e) => setGf({ ...gf, date: e.target.value })} /></label>
             {gMsg && <p role="alert" className="text-sm text-alert">{gMsg}</p>}
             <button disabled={gBusy} className="h-11 rounded-xl bg-green text-white font-semibold">{gBusy ? 'Saving…' : 'Save goal'}</button>
           </form>
