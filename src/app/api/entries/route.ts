@@ -40,6 +40,7 @@ export async function DELETE(req: Request) {
   if (!uid) return fail('Not signed in', 401);
   const id = new URL(req.url).searchParams.get('id') ?? '';
   if (!z.string().uuid().safeParse(id).success) return fail('Bad id');
-  await asUser(uid, (tx) => tx`update transactions set deleted = true, updated_at = now() where id = ${id}`);
+  const rows = await asUser(uid, (tx) => tx`update transactions set deleted = true, updated_at = now() where id = ${id} and not deleted returning id`);
+  if (!rows.length) return fail('Entry not found or already removed.', 404);
   return json({ ok: true });
 }
