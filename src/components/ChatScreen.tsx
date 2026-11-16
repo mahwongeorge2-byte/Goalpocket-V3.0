@@ -116,9 +116,11 @@ function ConfirmCard({ card, status, state, onDone }: { card: PendingCard; statu
     if (r.ok) onDone('saved', r.data.message); else setError(r.data.error ?? 'Could not save.');
   }
   async function cancel() {
-    setBusy(true);
-    await post('/api/actions/cancel', { id: card.pendingId });
-    setBusy(false); onDone('cancelled', 'OK, nothing was saved.');
+    setBusy(true); setError('');
+    const r = await post('/api/actions/cancel', { id: card.pendingId });
+    setBusy(false);
+    if (r.ok) onDone('cancelled', 'OK, nothing was saved.');
+    else setError(r.data.error ?? 'Could not cancel this action. Please try again.');
   }
 
   const upd = (i: number, patch: Partial<Row>) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
