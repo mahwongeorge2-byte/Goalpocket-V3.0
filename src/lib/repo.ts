@@ -131,10 +131,10 @@ export async function addChat(tx: Tx, uid: string, role: 'user' | 'assistant', c
 export async function chatHistory(tx: Tx, limit = 30, requestedId?: string) {
   const conversationId = await latestChatConversation(tx, undefined, requestedId);
   if (!conversationId) return [];
-  const rows = await tx`select role, content, created_at from chat_messages
+  const rows = await tx`select id, role, content, created_at from chat_messages
     where conversation_id = ${conversationId}
     order by created_at desc limit ${limit}`;
-  return rows.reverse().map((r) => ({ role: r.role as 'user' | 'assistant', content: r.content }));
+  return rows.reverse().map((r) => ({ id: r.id as string, role: r.role as 'user' | 'assistant', content: r.content }));
 }
 
 export async function deleteChatMessage(tx: Tx, messageId: string): Promise<boolean> {
