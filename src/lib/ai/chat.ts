@@ -2,7 +2,7 @@ import 'server-only';
 import { offlineCreate, DEMO_MODE_HELP } from './offline';
 import type Anthropic from '@anthropic-ai/sdk';
 import type { BetaMessage, BetaMessageParam, BetaToolResultBlockParam, BetaToolUseBlock } from '@anthropic-ai/sdk/resources/beta/messages/messages';
-import { geminiCreate } from './gemini';
+import { openrouterCreate } from './openrouter';
 import { asUser } from '../db';
 import { loadLedger, categoryRules, chatHistory, addChat, createPending, hitRateLimit, recentTransactions } from '../repo';
 import { affordability, budgetStatus, goalStatus, periodSummary, pocketBalances, totals, type Affordability, type Ledger } from '../engine';
@@ -13,7 +13,7 @@ import { SYSTEM_PROMPT, contextBlock } from './prompt';
 import { unbackedNumbers } from './numbercheck';
 import { validateTxnItem, buildTransfer, buildGoal, buildContribution, buildBudget, describePending, type Pending } from '../actions';
 
-export const MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+export const MODEL = process.env.OPENROUTER_MODEL || 'openrouter/free';
 const MAX_STEPS = 6;
 const MAX_INPUT = 500;
 
@@ -31,8 +31,8 @@ export type ChatResult = {
 type CreateFn = (params: Parameters<Anthropic['beta']['messages']['create']>[0]) => Promise<BetaMessage>;
 
 function defaultCreate(): CreateFn | null {
-  if (!process.env.GEMINI_API_KEY) return null;
-  return geminiCreate as CreateFn;
+  if (!process.env.OPENROUTER_API_KEY) return null;
+  return openrouterCreate as CreateFn;
 }
 const LABELS: Record<string, string> = {
   food: 'Food', transport: 'Transport', housing: 'Housing', utilities: 'Utilities', education: 'Education', health: 'Health',
@@ -140,6 +140,7 @@ export async function runChat(uid: string, text: string, opts: { today?: string;
     const safeDetail = detail
       .replace(/AIza[0-9A-Za-z_-]{20,}/g, '[redacted key]')
       .replace(/AQ\.[A-Za-z0-9_-]{20,}/g, '[redacted key]')
+      .replace(/sk-or-v1-[A-Za-z0-9_-]{20,}/g, '[redacted key]')
       .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
       .replace(/\s+/g, ' ')
       .slice(0, 220);
