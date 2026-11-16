@@ -42,7 +42,7 @@ Settings (`.env.local`, or Vercel project settings). **Never put real keys in co
 |---|---|
 | `DATABASE_URL` | Postgres connection string. Use a database user that is *not* a superuser, so row-level security applies. |
 | `SESSION_SECRET` | Any long random text, 32 characters or more. |
-| `GEMINI_API_KEY` | Claude API key. Without it the chat runs in demo mode (see above). |
+| `GEMINI_API_KEY` | Gemini API key. Without it the chat runs in demo mode (see above). |
 | `GOALPOCKET_MODEL` | Optional. Defaults to `claude-opus-5-5`. |
 
 ## Tests
