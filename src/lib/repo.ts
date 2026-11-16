@@ -85,12 +85,29 @@ export async function createPending(tx: Tx, uid: string, kind: string, payload: 
   return row.id as string;
 }
 
+/** Keep the current single-chat UI compatible with conversation-scoped storage.
+ * RLS limits this lookup to the signed-in user's conversations. */
+async function latestChatConversation(tx: Tx, uid?: string): Promise<string> {
+  const [existing] = await tx`select id from chat_conversations order by updated_at desc, created_at desc limit 1`;
+  if (existing) return existing.id as string;
+  if (!uid) return '';
+  const [created] = await tx`insert into chat_conversations (user_id, title) values (${uid}, 'New chat') returning id`;
+  return created.id as string;
+}
+
 export async function addChat(tx: Tx, uid: string, role: 'user' | 'assistant', content: unknown) {
-  await tx`insert into chat_messages (user_id, role, content) values (${uid}, ${role}, ${tx.json(content as never)})`;
+  const conversationId = await latestChatConversation(tx, uid);
+  await tx`insert into chat_messages (user_id, conversation_id, role, content)
+    values (${uid}, ${conversationId}, ${role}, ${tx.json(content as never)})`;
+  await tx`update chat_conversations set updated_at = now() where id = ${conversationId}`;
 }
 
 export async function chatHistory(tx: Tx, limit = 30) {
-  const rows = await tx`select role, content, created_at from chat_messages order by created_at desc limit ${limit}`;
+  const conversationId = await latestChatConversation(tx);
+  if (!conversationId) return [];
+  const rows = await tx`select role, content, created_at from chat_messages
+    where conversation_id = ${conversationId}
+    order by created_at desc limit ${limit}`;
   return rows.reverse().map((r) => ({ role: r.role as 'user' | 'assistant', content: r.content }));
 }
 
