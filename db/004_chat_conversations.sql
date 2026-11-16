@@ -29,9 +29,17 @@ from inserted i
 where m.user_id = i.user_id
   and m.conversation_id is null;
 
-alter table chat_messages
-  add constraint chat_messages_conversation_id_fkey
-  foreign key (conversation_id) references chat_conversations(id) on delete cascade;
+do $ begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'chat_messages_conversation_id_fkey'
+      and conrelid = 'chat_messages'::regclass
+  ) then
+    alter table chat_messages
+      add constraint chat_messages_conversation_id_fkey
+      foreign key (conversation_id) references chat_conversations(id) on delete cascade;
+  end if;
+end $;
 
 alter table chat_messages
   alter column conversation_id set not null;
