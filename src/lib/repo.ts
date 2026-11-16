@@ -85,25 +85,51 @@ export async function createPending(tx: Tx, uid: string, kind: string, payload: 
   return row.id as string;
 }
 
-/** Keep the current single-chat UI compatible with conversation-scoped storage.
- * RLS limits this lookup to the signed-in user's conversations. */
-async function latestChatConversation(tx: Tx, uid?: string): Promise<string> {
+export type ChatConversation = { id: string; title: string; updatedAt: string };
+
+export async function listChatConversations(tx: Tx): Promise<ChatConversation[]> {
+  const rows = await tx`select id, title, updated_at from chat_conversations order by updated_at desc, created_at desc limit 100`;
+  return rows.map((r) => ({ id: r.id as string, title: r.title as string, updatedAt: new Date(r.updated_at as string | Date).toISOString() }));
+}
+
+export async function createChatConversation(tx: Tx, uid: string): Promise<string> {
+  const [row] = await tx`insert into chat_conversations (user_id, title) values (${uid}, 'New chat') returning id`;
+  return row.id as string;
+}
+
+export async function deleteChatConversation(tx: Tx, conversationId: string): Promise<boolean> {
+  const rows = await tx`delete from chat_conversations where id = ${conversationId} returning id`;
+  return rows.length > 0;
+}
+
+/** RLS ensures the requested conversation belongs to the signed-in user. */
+async function latestChatConversation(tx: Tx, uid?: string, requestedId?: string): Promise<string> {
+  if (requestedId) {
+    const [requested] = await tx`select id from chat_conversations where id = ${requestedId} limit 1`;
+    if (requested) return requested.id as string;
+    throw new Error('Conversation not found');
+  }
   const [existing] = await tx`select id from chat_conversations order by updated_at desc, created_at desc limit 1`;
   if (existing) return existing.id as string;
   if (!uid) return '';
-  const [created] = await tx`insert into chat_conversations (user_id, title) values (${uid}, 'New chat') returning id`;
-  return created.id as string;
+  return createChatConversation(tx, uid);
 }
 
-export async function addChat(tx: Tx, uid: string, role: 'user' | 'assistant', content: unknown) {
-  const conversationId = await latestChatConversation(tx, uid);
+export async function addChat(tx: Tx, uid: string, role: 'user' | 'assistant', content: unknown, requestedId?: string) {
+  const conversationId = await latestChatConversation(tx, uid, requestedId);
   await tx`insert into chat_messages (user_id, conversation_id, role, content)
     values (${uid}, ${conversationId}, ${role}, ${tx.json(content as never)})`;
-  await tx`update chat_conversations set updated_at = now() where id = ${conversationId}`;
+  if (role === 'user') {
+    const title = String((content as { text?: unknown })?.text ?? 'New chat').trim().slice(0, 80) || 'New chat';
+    await tx`update chat_conversations set title = case when title = 'New chat' then ${title} else title end, updated_at = now() where id = ${conversationId}`;
+  } else {
+    await tx`update chat_conversations set updated_at = now() where id = ${conversationId}`;
+  }
+  return conversationId;
 }
 
-export async function chatHistory(tx: Tx, limit = 30) {
-  const conversationId = await latestChatConversation(tx);
+export async function chatHistory(tx: Tx, limit = 30, requestedId?: string) {
+  const conversationId = await latestChatConversation(tx, undefined, requestedId);
   if (!conversationId) return [];
   const rows = await tx`select role, content, created_at from chat_messages
     where conversation_id = ${conversationId}
