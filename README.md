@@ -10,7 +10,7 @@ Hackathon prototype (Stage 5). Not financial advice. Goalpocket never asks for P
 
 - **Welcome, demo and setup.** "Try the demo" opens a private copy of a fictional user (Musu). "Get started" sets up your own pockets, exchange rate and goal.
 - **Chat.** You type what you spent or earned. The AI proposes a card. Nothing is saved until you tap Save. You can edit the card first.
-- **Money tab.** Available to spend, total with locked pockets (like susu), each pocket, this week by category, weekly budget, insight of the week, this month report, recent entries (remove with ✕), the + button for manual entries, and settings (rate, spendable pockets, sign out, delete my data).
+- **Money tab.** Available to spend, total with locked pockets (like susu), each pocket, this week by category, weekly budget, insight of the week, this month report, recent entries (remove with confirmation), the + button for manual entries, and settings (rate, spendable pockets, sign out, permanently delete my data).
 - **Goal tab.** Progress, pace needed, your pace, finish date, and "Can I afford it?" with Show the math.
 
 ## Demo mode (no API key, no cost)
@@ -43,7 +43,7 @@ Settings (`.env.local`, or Vercel project settings). **Never put real keys in co
 | `DATABASE_URL` | Postgres connection string. Use a database user that is *not* a superuser, so row-level security applies. |
 | `SESSION_SECRET` | Any long random text, 32 characters or more. |
 | `GEMINI_API_KEY` | Gemini API key. Without it the chat runs in demo mode (see above). |
-| `GOALPOCKET_MODEL` | Optional. Defaults to `claude-opus-5-5`. |
+| `GEMINI_MODEL` | Optional. Defaults to `gemini-3.8-flash`. |
 
 ## Tests
 
@@ -57,6 +57,6 @@ The chat tests use a fake model and demo mode, so they cost nothing and need no 
 
 ## Deploy (Vercel + Supabase)
 
-1. Create a Supabase project. Create the app role by hand (`create role gp_app login password '...'`), then run `db/001_schema.sql` and `db/002_supabase.sql` in its SQL editor. Use the pooler connection string for `gp_app` as `DATABASE_URL`.
+1. Create a Supabase project. Create the app role by hand (`create role gp_app login password '...'`), then run `db/001_schema.sql`, `db/002_supabase.sql`, and `db/003_goal_withdrawals.sql` in its SQL editor, in that order. Use the pooler connection string for `gp_app` as `DATABASE_URL`.
 2. Push this folder to an empty GitHub repository.
 3. Import the repository in Vercel. Add the settings above. Deploy.
