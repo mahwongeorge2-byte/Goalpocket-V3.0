@@ -5,7 +5,37 @@ import type { BetaMessage, BetaMessageParam } from '@anthropic-ai/sdk/resources/
 type CreateParams = Parameters<Anthropic['beta']['messages']['create']>[0];
 type Msg = { role: 'user' | 'assistant'; content: string | Array<Record<string, unknown>> };
 type ToolDef = { name: string; description?: string; input_schema: unknown };
-type OpenAITool = { type: 'function'; function: { name: string; description?: string; parameters: unknown; strict: true } };
+type OpenAITool = { type: 'function'; function: { name: string; description?: string; parameters: unknown } };
+
+/**
+ * Gemini function declarations accept a narrower OpenAPI schema than the
+ * Anthropic-shaped schemas used by Goalpocket. Normalize nullable fields and
+ * remove JSON Schema keywords Gemini function calling does not support.
+ */
+function toGeminiSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(toGeminiSchema);
+  if (!value || typeof value !== 'object') return value;
+
+  const source = value as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+
+  for (const [key, raw] of Object.entries(source)) {
+    if (key === 'additionalProperties' || key === 'strict') continue;
+    if (key === 'type' && Array.isArray(raw)) {
+      const types = raw.filter((item) => item !== 'null');
+      result.type = types[0] ?? 'string';
+      if (raw.includes('null')) result.nullable = true;
+      continue;
+    }
+    if (key === 'enum' && Array.isArray(raw)) {
+      result.enum = raw.filter((item) => item !== null);
+      continue;
+    }
+    result[key] = toGeminiSchema(raw);
+  }
+
+  return result;
+}
 
 /** Adapt Goalpocket's existing Anthropic-shaped tool loop to Gemini's OpenAI-compatible API. */
 export async function geminiCreate(params: CreateParams): Promise<BetaMessage> {
@@ -71,8 +101,7 @@ export async function geminiCreate(params: CreateParams): Promise<BetaMessage> {
     function: {
       name: tool.name,
       description: tool.description,
-      parameters: tool.input_schema,
-      strict: true,
+      parameters: toGeminiSchema(tool.input_schema),
     },
   }));
 
