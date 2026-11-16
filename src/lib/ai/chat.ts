@@ -61,10 +61,11 @@ export async function runChat(uid: string, text: string, opts: { today?: string;
     return { ledger, profile, rules, history, conversationId };
   });
   if (!ctx) return { ...empty, reply: 'You are sending messages very fast. Please wait a minute and try again.', error: 'rate_limited' };
+  const activeConversationId = ctx.conversationId;
 
   if (!create) {
     const reply = 'The AI is not connected yet, so I cannot read messages. You can still add entries with the + button on the Money tab.';
-    await asUser(uid, (tx) => addChat(tx, uid, 'assistant', { text: reply }, ctx.conversationId));
+    await asUser(uid, (tx) => addChat(tx, uid, 'assistant', { text: reply }, activeConversationId));
     return { ...empty, reply, error: 'no_api_key' };
   }
 
@@ -151,7 +152,7 @@ export async function runChat(uid: string, text: string, opts: { today?: string;
   return await finish();
 
   async function finish(error?: ChatResult['error']): Promise<ChatResult> {
-    await asUser(uid, (tx) => addChat(tx, uid, 'assistant', { text: reply, cards: cards.map((c) => c.pendingId), ask, affordability: afford }, ctx.conversationId));
+    await asUser(uid, (tx) => addChat(tx, uid, 'assistant', { text: reply, cards: cards.map((c) => c.pendingId), ask, affordability: afford }, activeConversationId));
     return { reply, cards, ask, affordability: afford, numberCheck, ...(demoMode ? { demoMode } : {}), ...(error ? { error } : {}) };
   }
 }
